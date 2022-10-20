@@ -1,0 +1,26 @@
+type: code
+files:
+- name: src/Main.java
+  visible: true
+  text: |-
+    import java.io.IOException;
+
+    class Converter {
+        public static char[] convert(String[] words) throws IOException {
+            // implement the method
+        }
+    }
+  learner_created: false
+feedback_link: https://hyperskill.org/learn/step/8846#comment
+status: Failed
+feedback:
+  message: |
+    Compilation error
+    Main.java:30: error: cannot find symbol
+        public void writeWords(String[] words) throws IOException {
+                                                      ^
+      symbol:   class IOException
+      location: class Problem
+    1 error
+  time: Sat, 09 Apr 2022 21:41:10 UTC
+record: -1

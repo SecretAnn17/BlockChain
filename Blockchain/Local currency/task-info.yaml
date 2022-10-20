@@ -1,0 +1,1573 @@
+type: edu
+custom_name: stage6
+files:
+- name: src/blockchain/Main.java
+  visible: true
+  text: |
+    package blockchain;
+
+    public class Main {
+        public static void main(String[] args) {
+            System.out.println("Hello World!");
+        }
+    }
+  learner_created: false
+- name: test/BlockchainTest.java
+  visible: false
+  text: |
+    import org.hyperskill.hstest.stage.StageTest;
+    import org.hyperskill.hstest.testcase.CheckResult;
+    import org.hyperskill.hstest.testcase.TestCase;
+
+    import java.util.ArrayList;
+    import java.util.List;
+    import java.util.Objects;
+    import java.util.regex.Matcher;
+    import java.util.regex.Pattern;
+    import java.util.stream.Collectors;
+
+
+    class BlockParseException extends Exception {
+        BlockParseException(String msg) {
+            super(msg);
+        }
+    }
+
+
+    class Block {
+
+        int id;
+        long timestamp;
+        long magic;
+        String hashprev;
+        String hash;
+
+        static ArrayList<String> minerIds;
+
+        static Block parseBlock(String strBlock) throws BlockParseException {
+            if (strBlock.length() == 0) {
+                return null;
+            }
+
+            if (!(strBlock.contains("Block:")
+                    && strBlock.contains("Timestamp:"))) {
+
+                return null;
+            }
+
+            Block block = new Block();
+
+            List<String> lines = strBlock
+                    .lines()
+                    .map(String::strip)
+                    .filter(e -> e.length() > 0)
+                    .collect(Collectors.toList());
+
+            if (lines.size() < 13) {
+                throw new BlockParseException("Every block should " +
+                        "contain at least 13 lines of data");
+            }
+
+            if (!lines.get(0).equals("Block:")) {
+                throw new BlockParseException("First line of every block " +
+                        "should be \"Block:\"");
+            }
+
+            if (!lines.get(1).startsWith("Created by")) {
+                throw new BlockParseException("Second line of every block " +
+                        "should start with \"Created by\"");
+            }
+
+            minerIds.add(lines.get(1));
+
+            if (!lines.get(2).contains("gets 100 VC")) {
+                throw new BlockParseException("Third line of every block " +
+                        "should contain \"gets 100 VC\"");
+            }
+
+            //The miner who created the block must be the miner who gets the VC
+            Pattern p = Pattern.compile(".*(miner\\d+).*", Pattern.CASE_INSENSITIVE);
+            try {
+                Matcher m1 = p.matcher(lines.get(1));
+                Matcher m2 = p.matcher(lines.get(2));
+                if (!m1.find() || !m2.find()){
+                    throw new BlockParseException("All miner names should be in the format 'miner#', as in 'miner1'");
+                }
+
+                boolean ok = m1.group(1).equals(m2.group(1));
+                if (!ok) {
+                    throw new BlockParseException("The miner who creates the block must get the VC!");
+                }
+            } catch (IllegalStateException e) {
+                throw new BlockParseException("Illegal state ");
+            } catch (IndexOutOfBoundsException e){
+                throw new BlockParseException("All miner names should be in the format 'miner#', as in 'miner1'");
+            }
+
+            if (!lines.get(3).startsWith("Id:")) {
+                throw new BlockParseException("4-th line of every block " +
+                        "should start with \"Id:\"");
+            }
+
+            String id = lines.get(3).split(":")[1]
+                    .strip().replace("-", "");
+            boolean isNumeric = id.chars().allMatch(Character::isDigit);
+
+            if (!isNumeric) {
+                throw new BlockParseException("Id should be a number");
+            }
+
+            block.id = Integer.parseInt(id);
+
+
+
+            if (!lines.get(4).startsWith("Timestamp:")) {
+                throw new BlockParseException("5-th line of every block " +
+                        "should start with \"Timestamp:\"");
+            }
+
+            String timestamp = lines.get(4).split(":")[1]
+                    .strip().replace("-", "");
+            isNumeric = timestamp.chars().allMatch(Character::isDigit);
+
+            if (!isNumeric) {
+                throw new BlockParseException("Timestamp should be a number");
+            }
+
+            block.timestamp = Long.parseLong(timestamp);
+
+
+            if (!lines.get(5).startsWith("Magic number:")) {
+                throw new BlockParseException("6-th line of every block " +
+                        "should start with \"Magic number:\"");
+            }
+
+            String magic = lines.get(5).split(":")[1]
+                    .strip().replace("-", "");
+            isNumeric = magic.chars().allMatch(Character::isDigit);
+
+            if (!isNumeric) {
+                throw new BlockParseException("Magic number should be a number");
+            }
+
+            block.magic = Long.parseLong(magic);
+
+
+
+            if (!lines.get(6).equals("Hash of the previous block:")) {
+                throw new BlockParseException("7-th line of every block " +
+                        "should be \"Hash of the previous block:\"");
+            }
+
+            if (!lines.get(8).equals("Hash of the block:")) {
+                throw new BlockParseException("9-th line of every block " +
+                        "should be \"Hash of the block:\"");
+            }
+
+            String prevhash = lines.get(7).strip();
+            String hash = lines.get(9).strip();
+
+            if (!(prevhash.length() == 64 || prevhash.equals("0"))
+                    || !(hash.length() == 64)) {
+
+                throw new BlockParseException("Hash length should " +
+                        "be equal to 64 except \"0\"");
+            }
+
+            block.hash = hash;
+            block.hashprev = prevhash;
+
+            if (!lines.get(10).startsWith("Block data:")) {
+                throw new BlockParseException("11-th line of every block " +
+                        "should start with \"Block data:\"");
+            }
+
+            return block;
+        }
+
+
+        static List<Block> parseBlocks(String output) throws BlockParseException {
+            minerIds = new ArrayList<String>();
+
+            String[] strBlocks = output.split("\n\n");
+
+            List<Block> blocks = new ArrayList<>();
+
+            for (String strBlock : strBlocks) {
+                Block block = parseBlock(strBlock.strip());
+                if (block != null) {
+                    blocks.add(block);
+                }
+            }
+
+            String firstMiner = minerIds.get(0);
+            minerIds.removeIf(s -> Objects.equals(s, firstMiner));
+            if (minerIds.size() == 0){
+                throw new BlockParseException("All blocks are mined by a single miner!");
+            }
+
+            return blocks;
+        }
+    }
+
+    class Clue {
+        String zeros;
+        Clue(int n) {
+            zeros = "0".repeat(n);
+        }
+    }
+
+
+    public class BlockchainTest extends StageTest<Clue> {
+
+        List<String> previousOutputs = new ArrayList<>();
+
+        @Override
+        public List<TestCase<Clue>> generate() {
+            return List.of(
+                    new TestCase<>(),
+                    new TestCase<>()
+            );
+        }
+
+        @Override
+        public CheckResult check(String reply, Clue clue) {
+
+            if (previousOutputs.contains(reply)) {
+                return new CheckResult(false,
+                        "You already printed this text in the previous tests");
+            }
+
+            previousOutputs.add(reply);
+
+            List<Block> blocks;
+            try {
+                blocks = Block.parseBlocks(reply);
+            } catch (BlockParseException ex) {
+                return new CheckResult(false, ex.getMessage());
+            } catch (Exception ex) {
+                return CheckResult.wrong("");
+            }
+
+            if (blocks.size() != 15) {
+                return new CheckResult(false,
+                        "In this stage you should output 15 blocks, found " + blocks.size());
+            }
+
+            for (int i = 1; i < blocks.size(); i++) {
+                Block curr = blocks.get(i - 1);
+                Block next = blocks.get(i);
+
+                if (curr.id + 1 != next.id) {
+                    return new CheckResult(false,
+                            "Id`s of blocks should increase by 1");
+                }
+
+                if (next.timestamp < curr.timestamp) {
+                    return new CheckResult(false,
+                            "Timestamp`s of blocks should increase");
+                }
+
+                if (!next.hashprev.equals(curr.hash)) {
+                    return new CheckResult(false, "Two hashes aren't equal, " +
+                            "but should");
+                }
+            }
+
+
+            return CheckResult.correct();
+        }
+    }
+  learner_created: false
+- name: src/blockchain/HashWithMagicNumberDTO.java
+  visible: true
+  text: |
+    package blockchain;
+
+    import java.time.LocalTime;
+
+    class HashWithMagicNumberDTO {
+        Long magicNumber;
+        int timeTaken;
+        String hashOfBlock;
+        String statusOfNumberOfZeros;
+        LocalTime timeOfCreation;
+
+        public LocalTime getTimeOfCreation() {
+            return timeOfCreation;
+        }
+
+        public void setTimeOfCreation(LocalTime timeOfCreation) {
+            this.timeOfCreation = timeOfCreation;
+        }
+
+        public String getStatusOfNumberOfZeros() {
+            return statusOfNumberOfZeros;
+        }
+
+        public void setStatusOfNumberOfZeros(String statusOfNumberOfZeros) {
+            this.statusOfNumberOfZeros = statusOfNumberOfZeros;
+        }
+
+        public void setMagicNumber(Long magicNumber) {
+            this.magicNumber = magicNumber;
+        }
+
+        public void setTimeTaken(int timeTaken) {
+            this.timeTaken = timeTaken;
+        }
+
+        public void setHashOfBlock(String hashOfBlock) {
+            this.hashOfBlock = hashOfBlock;
+        }
+
+        public Long getMagicNumber() {
+            return magicNumber;
+        }
+
+        public int getTimeTaken() {
+            return timeTaken;
+        }
+
+        public String getHashOfBlock() {
+            return hashOfBlock;
+        }
+    }
+  learner_created: true
+- name: BlockChain.txt
+  visible: true
+  text: "��\0\x05sr\0\x14java.util.LinkedList\f)S]J`�\"\x03\0\0xpw\x04\0\0\0\x05sr\0\
+    \x15blockchain.BlockChain\0\0\0\0\0\0\0\x01\x02\0\tJ\0\vminorNumberI\0\x13timeToGenerateBlockL\0\
+    \x0echatOfTheBlockt\0\x10Ljava/util/List;L\0\vhashOfBlockt\0\x12Ljava/lang/String;L\0\
+    \x13hashOfPreviousBlockq\0~\0\x04L\0\x02idt\0\x10Ljava/lang/Long;L\0\vmagicNumberq\0\
+    ~\0\x05L\0\x15statusOfNumberOfZerosq\0~\0\x04L\0\ttimestampq\0~\0\x05xp\0\0\0\0\
+    \0\0\0\x1a\0\0\0\0pt\0@0074bcb28a0613fe7e787527b2577a03ffbd020f0c3c38e25cc68ca4e3ad30c4t\0\
+    \x010sr\0\x0ejava.lang.Long;��̏#�\x02\0\x01J\0\x05valuexr\0\x10java.lang.Number�\
+    ��\x1d\v���\x02\0\0xp\0\0\0\0\0\0\0\x01sq\0~\0\t\0\0\0\0\0\0\b`t\0\x14N was increased\
+    \ to 2sq\0~\0\t\0\0\x01��+DLsq\0~\0\x02\0\0\0\0\0\0\0\x1c\0\0\0\0pt\0@006de37dacc713fc2f7e556c08e85b462df2a8bf8d73432a9d3d60eccba99b3aq\0\
+    ~\0\asq\0~\0\t\0\0\0\0\0\0\0\x02sq\0~\0\t\0\0\0\0\0\0\x10qt\0\x14N was increased\
+    \ to 2sq\0~\0\t\0\0\x01��+DWsq\0~\0\x02\0\0\0\0\0\0\0\e\0\0\0\0sr\0\x13java.util.ArrayListx�\
+    �\x1d��a�\x03\0\x01I\0\x04sizexp\0\0\0\x01w\x04\0\0\0\x01sr\0\x1ablockchain.chat.MessageDTO\0\
+    \0\0\0\0\0\0\x02\x02\0\x05I\0\x02idL\0\vmessageTextq\0~\0\x04[\0\x04signt\0\x02\
+    [BL\0\btimeSentt\0\x15Ljava/time/LocalTime;L\0\x04usert\0\x16Lblockchain/chat/User;xp\0\
+    \0\0\x02t\0\nhsfznduabuur\0\x02[B��\x17�\x06\bT�\x02\0\0xp\0\0\0�a�\x04�\x16�\
+    ]Ɉ�*��7`c㮀�2���\noI��s�>qڱp�\x02����\x1c>�ep\x17\v��=#�Tu\x10�\nk^Lm��Q�<0b/6�\
+    \ \x17���,(\x04����Q�!ݲ����s\v�\x1a�3���\x0e\x1c\x11��甑 TD �u1\n��\x15\x0e �;sr\0\
+    \njava.time.Ser�]��\e\"H�\f\0\0xpw\b\x04\x12:\x14-P�8xsr\0\x14blockchain.chat.User�\
+    �3T\n�d�\x02\0\x03L\0\x10pathToPrivateKeyq\0~\0\x04L\0\x0fpathToPublicKeyq\0~\0\
+    \x04L\0\buserNameq\0~\0\x04xpt\0\x17KeyPair/John.privateKeyt\0\x16KeyPair/John.publicKeyt\0\
+    \x04Johnxt\0@0014c6bf2bd1587bc58e09e55b72a989f4dd6a7e37aa892cfccc7ea7e34647a1q\0\
+    ~\0\x10sq\0~\0\t\0\0\0\0\0\0\0\x03sq\0~\0\t\0\0\0\0\0\0\x15�t\0\x14N was increased\
+    \ to 2sq\0~\0\t\0\0\x01��+DZsq\0~\0\x02\0\0\0\0\0\0\0\x1c\0\0\0\0pt\0@0018b39b220a0a45a470a1fbc58ff3abdf1b7da00c31448bfd8794693f20d659q\0\
+    ~\0'sq\0~\0\t\0\0\0\0\0\0\0\x04sq\0~\0\t\0\0\0\0\0\0\x05�t\0\x14N was increased\
+    \ to 2sq\0~\0\t\0\0\x01��+D\\sq\0~\0\x02\0\0\0\0\0\0\0\x1a\0\0\0\0pt\0@00550e16c0a3c871bfcaa1c2fb0757535dd2f2e2af13c53c781740d4b800e301q\0\
+    ~\0-sq\0~\0\t\0\0\0\0\0\0\0\x05sq\0~\0\t\0\0\0\0\0\0\vkt\0\x14N was increased\
+    \ to 2sq\0~\0\t\0\0\x01��+D_x"
+  learner_created: true
+- name: src/blockchain/BlockChain.java
+  visible: true
+  text: |
+    package blockchain;
+
+    import blockchain.chat.MessageDTO;
+    import blockchain.chat.VerifyMessage;
+
+    import java.io.Serializable;
+    import java.time.Instant;
+    import java.time.LocalTime;
+    import java.time.ZoneId;
+    import java.util.*;
+    import java.util.stream.Collectors;
+
+    public class BlockChain implements Serializable {
+
+        static final long serialVersionUID = 1L;
+        Long id;
+        Long timestamp;
+        Long magicNumber;
+        String hashOfPreviousBlock;
+        String hashOfBlock;
+        int timeToGenerateBlock;
+        String statusOfNumberOfZeros;
+        List<MessageDTO> chatOfTheBlock;
+        long minorNumber;
+        static List<BlockChain> blockChainList = new LinkedList<>();
+        static volatile int numberOfZeros = 2;
+        public BlockChain(Long id, String hashOfPreviousBlock, long minorNumber, LocalTime previousBlockTimeCreation) {
+            this.id = id;
+            this.timestamp = new Date().getTime();
+            this.hashOfPreviousBlock = hashOfPreviousBlock;
+            HashWithMagicNumberDTO hashDTO = StringUtil
+                    .hashWithMagicNumberDTO(
+                            this.id.toString() +
+                                    this.timestamp +
+                                    this.hashOfPreviousBlock);
+            this.magicNumber = hashDTO.getMagicNumber();
+            this.hashOfBlock =  hashDTO.getHashOfBlock();
+            this.timeToGenerateBlock = hashDTO.getTimeTaken();
+            this.statusOfNumberOfZeros = hashDTO.getStatusOfNumberOfZeros();
+            this.minorNumber = minorNumber;
+            LocalTime timeOfBlockCreation = Instant.ofEpochMilli(this.timestamp).atZone(ZoneId.systemDefault()).toLocalTime();
+            List<MessageDTO> blockMessages = FacadeChat.blockDataContainer.stream()
+                    .filter(x ->
+                        x.getTimeSent().compareTo(timeOfBlockCreation)<0 &&
+                                x.getTimeSent().compareTo(previousBlockTimeCreation)>=0 &&
+                                VerifyMessage.verifySignature(
+                                            x.getMessageText().getBytes(),
+                                            x.getSign(),
+                                            x.getUser().getPathToPublicKey()
+                                    )
+                    )
+                    .collect(Collectors.toList());
+            if ( blockMessages.size() > 0 && this.id > 1 ) {
+                this.chatOfTheBlock = blockMessages;
+            }
+        }
+        public long getMinorNumber() {
+            return minorNumber;
+        }
+
+        public void setMinorNumber(int minorNumber) {
+            this.minorNumber = minorNumber;
+        }
+        public String getStatusOfNumberOfZeros() {
+            return statusOfNumberOfZeros;
+        }
+
+        public void setStatusOfNumberOfZeros(String statusOfNumberOfZeros) {
+            this.statusOfNumberOfZeros = statusOfNumberOfZeros;
+        }
+        public long getId() {
+            return id;
+        }
+
+        public void setId(Long id) {
+            this.id = id;
+        }
+        public Long getTimestamp() {
+            return timestamp;
+        }
+
+        public void setTimestamp(Long timestamp) {
+            this.timestamp = timestamp;
+        }
+        public Long getMagicNumber() {
+            return magicNumber;
+        }
+
+        public String getHashOfPreviousBlock() {
+            return hashOfPreviousBlock;
+        }
+
+        public void setHashOfPreviousBlock(String hashOfPreviousBlock) {
+            this.hashOfPreviousBlock = hashOfPreviousBlock;
+        }
+
+        public String getHashOfBlock() {
+            return hashOfBlock;
+        }
+
+        public void setHashOfBlock(String hashOfBlock) {
+            this.hashOfBlock = hashOfBlock;
+        }
+
+        public void setMagicNumber(Long magicNumber) {
+            this.magicNumber = magicNumber;
+        }
+
+        public int getTimeToGenerateBlock() {
+            return timeToGenerateBlock;
+        }
+
+        public void setTimeToGenerateBlock(int timeToGenerateBlock) {
+            this.timeToGenerateBlock = timeToGenerateBlock;
+        }
+
+        public static List<BlockChain> getBlockChainList() {
+            return blockChainList;
+        }
+
+        public static void setBlockChainList(List<BlockChain> blockChainList) {
+            BlockChain.blockChainList = blockChainList;
+        }
+
+        public static Boolean validate(){
+            for(int i = 0; i < blockChainList.size() - 1; i++) {
+                if(!blockChainList.get(i+1).getHashOfPreviousBlock().equals(blockChainList.get(i).getHashOfBlock())){
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        @Override
+        public String toString() {
+            String messages = chatOfTheBlock!=null?chatOfTheBlock.stream()
+                    .map(n -> n.getUser().getUserName() + ": " + n.getMessageText())
+                    .collect(Collectors.joining("\n")):"no message";
+            return "Block:" + '\n' +
+                    "Created by miner # " + getMinorNumber() + '\n' +
+                    "Id: "+ getId() + '\n' +
+                    "Timestamp: " + getTimestamp() + '\n' +
+                    "Magic number: " + getMagicNumber() + '\n' +
+                    "Hash of the previous block: " + '\n' +
+                    getHashOfPreviousBlock() + '\n' +
+                    "Hash of the block: " + '\n' +
+                    getHashOfBlock() + '\n' +
+                    "Block data: " + '\n' +
+                    messages + '\n' +
+                    "Block was generating for " + getTimeToGenerateBlock() +  " seconds" + '\n' +
+                    getStatusOfNumberOfZeros() + '\n' +
+                    "Time of creation: " + Instant.ofEpochMilli(this.timestamp).atZone(ZoneId.systemDefault()).toLocalTime() + '\n';
+        }
+    }
+  learner_created: true
+- name: src/blockchain/Command.java
+  visible: true
+  text: |
+    package blockchain;
+
+    import java.util.List;
+
+    interface Command {
+        void execute(long threadId);
+    }
+  learner_created: true
+- name: src/blockchain/GenerateBlockChain.java
+  visible: true
+  text: |
+    package blockchain;
+
+    import java.time.Instant;
+    import java.time.LocalTime;
+    import java.time.ZoneId;
+    import java.util.concurrent.TimeUnit;
+
+    import static java.math.BigInteger.ZERO;
+
+    class GenerateBlockChain implements Command {
+        @Override
+        public synchronized void execute(long threadId) {
+            /*try {
+                TimeUnit.MILLISECONDS.sleep(10);
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            }*/
+            //System.out.println("ThreadId: " + threadId);
+            if(BlockChain.blockChainList.size()>0) {
+                BlockChain lastBlock = BlockChain.blockChainList.get(BlockChain.blockChainList.size()-1);
+                BlockChain.blockChainList
+                        .add(new BlockChain(
+                                lastBlock.getId()+1,
+                                lastBlock.getHashOfBlock(),
+                                threadId,
+                                Instant.ofEpochMilli(lastBlock.timestamp).atZone(ZoneId.systemDefault()).toLocalTime()));
+            }
+            else {
+                BlockChain.blockChainList.add(new BlockChain(1L, ZERO.toString(), threadId, LocalTime.now()));
+            }
+        }
+    }
+  learner_created: true
+- name: src/blockchain/utils/SerializationUtils.java
+  visible: true
+  text: |
+    package blockchain;
+
+    import java.io.*;
+
+    class SerializationUtils {
+
+        public static void serialize(Object blockChain, File file) throws IOException {
+            FileOutputStream fos = new FileOutputStream(file, true);
+            BufferedOutputStream bos = new BufferedOutputStream(fos);
+            ObjectOutputStream oos = new ObjectOutputStream(bos);
+            oos.writeObject(blockChain);
+            oos.close();
+        }
+
+        public static Object deserialize(File file) throws IOException, ClassNotFoundException {
+            FileInputStream fis = new FileInputStream(file);
+            BufferedInputStream bis = new BufferedInputStream(fis);
+            ObjectInputStream ois = new ObjectInputStream(bis);
+            Object obj = ois.readObject();
+            ois.close();
+            return obj;
+        }
+    }
+  learner_created: true
+- name: src/blockchain/utils/StringUtil.java
+  visible: true
+  text: |
+    package blockchain;
+
+    import java.security.MessageDigest;
+    import java.time.LocalTime;
+    import java.util.ArrayList;
+    import java.util.regex.Pattern;
+
+    class StringUtil {
+        /* Applies Sha256 to a string and returns a hash. */
+        public static String applySha256(String input){
+            try {
+                MessageDigest digest = MessageDigest.getInstance("SHA-256");
+                /* Applies sha256 to our input */
+                byte[] hash = digest.digest(input.getBytes("UTF-8"));
+                StringBuilder hexString = new StringBuilder();
+                for (byte elem: hash) {
+                    String hex = Integer.toHexString(0xff & elem);
+                    if(hex.length() == 1) hexString.append('0');
+                    hexString.append(hex);
+                }
+                return hexString.toString();
+            }
+            catch(Exception e) {
+                throw new RuntimeException(e);
+            }
+        }
+
+        public static Long generateMagicNumber(){
+            int min = 1000;
+            int max = 9000;
+            return (long)(Math.random()*(max-min+1)+min);
+        };
+        public static HashWithMagicNumberDTO hashWithMagicNumberDTO(String input) {
+            long magicNumber = 0;
+
+            LocalTime startTime = LocalTime.now();
+            Pattern pattern = Pattern.compile("^0{"+BlockChain.numberOfZeros+"}.*");
+            Boolean isHashCodeMatchesThePatter = false;
+            String valueOfHashOfBlock = "";
+            while (isHashCodeMatchesThePatter != true){
+                magicNumber = generateMagicNumber();
+                valueOfHashOfBlock = applySha256(input+magicNumber);
+                isHashCodeMatchesThePatter = pattern.matcher(valueOfHashOfBlock).matches();
+            }
+
+            HashWithMagicNumberDTO hashWithMagicNumberDTO = new HashWithMagicNumberDTO();
+            hashWithMagicNumberDTO.setTimeOfCreation(LocalTime.now());
+            hashWithMagicNumberDTO.setMagicNumber(magicNumber);
+            hashWithMagicNumberDTO.setHashOfBlock(valueOfHashOfBlock);
+            hashWithMagicNumberDTO.setTimeTaken(LocalTime.now().getSecond() - startTime.getSecond());
+
+            if (hashWithMagicNumberDTO.getTimeTaken() < 15) {
+                //BlockChain.numberOfZeros++; //comment here to avoid zero increasing
+                hashWithMagicNumberDTO.setStatusOfNumberOfZeros("N was increased to " + BlockChain.numberOfZeros);
+            } else if (hashWithMagicNumberDTO.getTimeTaken() >= 15 && hashWithMagicNumberDTO.getTimeTaken() < 60) {
+                hashWithMagicNumberDTO.setStatusOfNumberOfZeros("N stays the same");
+            } else {
+                //BlockChain.numberOfZeros--; //comment here to avoid zero increasing
+                hashWithMagicNumberDTO.setStatusOfNumberOfZeros("N was decreased by " + BlockChain.numberOfZeros);
+            }
+            return hashWithMagicNumberDTO;
+        }
+    }
+  learner_created: true
+- name: src/blockchain/utils/SignUtil.java
+  visible: true
+  text: |
+    package blockchain.chat;
+
+    import blockchain.BlockChain;
+    import blockchain.FacadeChat;
+
+    import java.io.File;
+    import java.io.FileNotFoundException;
+    import java.io.FileOutputStream;
+    import java.io.IOException;
+    import java.io.ObjectOutputStream;
+    import java.nio.file.Files;
+    import java.security.InvalidKeyException;
+    import java.security.KeyFactory;
+    import java.security.PrivateKey;
+    import java.security.Signature;
+    import java.security.spec.PKCS8EncodedKeySpec;
+    import java.util.ArrayList;
+    import java.util.List;
+
+    import javax.swing.JOptionPane;
+
+    public class Message {
+
+        private List<byte[]> list;
+
+        //The constructor of Message class builds the list that will be written to the file.
+        //The list consists of the message and the signature.
+        public Message(String data, String keyFile) throws InvalidKeyException, Exception {
+            list = new ArrayList<byte[]>();
+            list.add(data.getBytes());
+            list.add(sign(data, keyFile));
+        }
+
+        //The method that signs the data using the private key that is stored in keyFile path
+        public static byte[] sign(String data, String keyFile) throws InvalidKeyException, Exception{
+            Signature rsa = Signature.getInstance("SHA1withRSA");
+            rsa.initSign(getPrivate(keyFile));
+            rsa.update(data.getBytes());
+            return rsa.sign();
+        }
+
+        //Method to retrieve the Private Key from a file
+        public static PrivateKey getPrivate(String filename) throws Exception {
+            byte[] keyBytes = Files.readAllBytes(new File(filename).toPath());
+            PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec(keyBytes);
+            KeyFactory kf = KeyFactory.getInstance("RSA");
+            return kf.generatePrivate(spec);
+        }
+
+        //Method to write the List of byte[] to a file
+        public void writeToFile(String filename) throws FileNotFoundException, IOException {
+            File f = new File(filename);
+            f.getParentFile().mkdirs();
+            ObjectOutputStream out = new ObjectOutputStream(new FileOutputStream(filename));
+            out.writeObject(list);
+            out.close();
+            System.out.println("Your file is ready.");
+        }
+
+
+        /*public static void main(String[] args) throws InvalidKeyException, IOException, Exception{
+            String data = JOptionPane.showInputDialog("Type your message here");
+
+            new Message(data, "MyKeys/privateKey").writeToFile("MyData/SignedData.txt");
+        }*/
+    }
+  learner_created: true
+- name: src/blockchain/utils/CalculationBlockUtil.java
+  visible: true
+  learner_created: true
+- name: src/blockchain/transaction/User.java
+  visible: true
+  text: |
+    package blockchain.chat;
+
+    import java.io.IOException;
+    import java.io.Serializable;
+    import java.security.NoSuchAlgorithmException;
+    import java.security.NoSuchProviderException;
+
+    public class User implements Serializable {
+        String userName;
+        String pathToPrivateKey;
+        String pathToPublicKey;
+
+        public User(String userName, String pathToPrivateKey, String pathToPublicKey) {
+            this.userName = userName;
+            this.pathToPrivateKey = pathToPrivateKey;
+            this.pathToPublicKey = pathToPublicKey;
+        }
+
+        public static User createUserWithKeys(String name) {
+            GenerateKeys gk;
+            String pathToPublicKey = "KeyPair/" + name + ".publicKey";
+            String pathToPrivateKey = "KeyPair/" + name + ".privateKey";
+            try {
+                gk = new GenerateKeys(1024);
+                gk.createKeys();
+                gk.writeToFile(pathToPublicKey, gk.getPublicKey().getEncoded());
+                gk.writeToFile(pathToPrivateKey, gk.getPrivateKey().getEncoded());
+            } catch (NoSuchAlgorithmException | NoSuchProviderException e) {
+                System.err.println(e.getMessage());
+            } catch (IOException e) {
+                System.err.println(e.getMessage());
+            }
+            return new User(name, pathToPrivateKey, pathToPublicKey);
+        }
+        public String getUserName() {
+            return userName;
+        }
+
+        public void setUserName(String userName) {
+            this.userName = userName;
+        }
+
+        public String getPathToPrivateKey() {
+            return pathToPrivateKey;
+        }
+
+        public void setPathToPrivateKey(String pathToPrivateKey) {
+            this.pathToPrivateKey = pathToPrivateKey;
+        }
+
+        public String getPathToPublicKey() {
+            return pathToPublicKey;
+        }
+
+        public void setPathToPublicKey(String pathToPublicKey) {
+            this.pathToPublicKey = pathToPublicKey;
+        }
+    }
+  learner_created: true
+- name: src/blockchain/transaction/GenerateKeys.java
+  visible: true
+  text: |
+    package blockchain.chat;
+
+    import java.io.File;
+    import java.io.FileOutputStream;
+    import java.io.IOException;
+    import java.security.KeyPair;
+    import java.security.KeyPairGenerator;
+    import java.security.NoSuchAlgorithmException;
+    import java.security.NoSuchProviderException;
+    import java.security.PrivateKey;
+    import java.security.PublicKey;
+
+    public class GenerateKeys {
+        private KeyPairGenerator keyGen;
+        private KeyPair pair;
+        private PrivateKey privateKey;
+        private PublicKey publicKey;
+
+        public GenerateKeys(int keylength) throws NoSuchAlgorithmException, NoSuchProviderException {
+            this.keyGen = KeyPairGenerator.getInstance("RSA");
+            this.keyGen.initialize(keylength);
+        }
+
+        public void createKeys() {
+            this.pair = this.keyGen.generateKeyPair();
+            this.privateKey = pair.getPrivate();
+            this.publicKey = pair.getPublic();
+        }
+
+        public PrivateKey getPrivateKey() {
+            return this.privateKey;
+        }
+
+        public PublicKey getPublicKey() {
+            return this.publicKey;
+        }
+
+        public void writeToFile(String path, byte[] key) throws IOException {
+            File f = new File(path);
+            f.getParentFile().mkdirs();
+
+            FileOutputStream fos = new FileOutputStream(f);
+            fos.write(key);
+            fos.flush();
+            fos.close();
+        }
+
+
+
+       /* public static void main(String[] args) {
+            GenerateKeys gk;
+            try {
+                gk = new GenerateKeys(1024);
+                gk.createKeys();
+                gk.writeToFile("KeyPair/publicKey", gk.getPublicKey().getEncoded());
+                gk.writeToFile("KeyPair/privateKey", gk.getPrivateKey().getEncoded());
+            } catch (NoSuchAlgorithmException | NoSuchProviderException e) {
+                System.err.println(e.getMessage());
+            } catch (IOException e) {
+                System.err.println(e.getMessage());
+            }
+        }*/
+    }
+  learner_created: true
+- name: src/blockchain/transaction/VerifyTransactionMessage.java
+  visible: true
+  text: |
+    package blockchain.chat;
+
+    import java.io.File;
+    import java.io.FileInputStream;
+    import java.io.ObjectInputStream;
+    import java.nio.file.Files;
+    import java.security.*;
+    import java.security.spec.X509EncodedKeySpec;
+    import java.util.List;
+
+    public class VerifyMessage {
+        private List<byte[]> list;
+
+        @SuppressWarnings("unchecked")
+        //The constructor of VerifyMessage class retrieves the byte arrays from the File
+        //and prints the message only if the signature is verified.
+        public VerifyMessage(String filename, String keyFile) throws Exception {
+            ObjectInputStream in = new ObjectInputStream(new FileInputStream(filename));
+            this.list = (List<byte[]>) in.readObject();
+            in.close();
+
+            System.out.println(verifySignature(list.get(0), list.get(1), keyFile) ? "VERIFIED MESSAGE" +
+                    "\n----------------\n" + new String(list.get(0)) : "Could not verify the signature.");
+        }
+
+        //Method for signature verification that initializes with the Public Key,
+        //updates the data to be verified and then verifies them using the signature
+        public static boolean verifySignature(byte[] data, byte[] signature, String keyFile)  {
+            Signature sig = null;
+            try {
+                sig = Signature.getInstance("SHA1withRSA");
+            } catch (NoSuchAlgorithmException e) {
+                throw new RuntimeException(e);
+            }
+            try {
+                sig.initVerify(getPublic(keyFile));
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+            try {
+                sig.update(data);
+            } catch (SignatureException e) {
+                throw new RuntimeException(e);
+            }
+
+            try {
+                return sig.verify(signature);
+            } catch (SignatureException e) {
+                throw new RuntimeException(e);
+            }
+        }
+
+        //Method to retrieve the Public Key from a file
+        public static PublicKey getPublic(String filename) throws Exception {
+            byte[] keyBytes = Files.readAllBytes(new File(filename).toPath());
+            X509EncodedKeySpec spec = new X509EncodedKeySpec(keyBytes);
+            KeyFactory kf = KeyFactory.getInstance("RSA");
+            return kf.generatePublic(spec);
+        }
+
+        /*public static void main(String[] args) throws Exception{
+            new VerifyMessage("MyData/SignedData.txt", "MyKeys/publicKey");
+        }*/
+    }
+  learner_created: true
+- name: src/blockchain/transaction/GenerateTransaction.java
+  visible: true
+  learner_created: true
+- name: KeyPair/miner27.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner26.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner21.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner26.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner23.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner25.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner20.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner25.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner22.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner22.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner23.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner27.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner24.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner24.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner21.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner20.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner59.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner44.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner52.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner60.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner37.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner29.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner30.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner67.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner64.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner51.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner44.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner54.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner34.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner58.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner45.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner36.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner68.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner55.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner61.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner65.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner35.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner45.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner31.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner62.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner57.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner65.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner42.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner52.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner54.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner62.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner41.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner61.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner31.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner50.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner32.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner60.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner34.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner47.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner51.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner56.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner33.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner63.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner66.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner33.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner36.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner46.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner41.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner40.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner30.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner56.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner63.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner53.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner48.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner43.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner32.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner64.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner39.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner49.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner42.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner55.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner50.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner46.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner38.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner47.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner37.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner57.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner67.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner43.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner35.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner28.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner38.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner58.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner66.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner53.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner40.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner48.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner29.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner59.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner68.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner49.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner39.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner28.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner113.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner75.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner103.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner83.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner74.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner90.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner92.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner112.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner72.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner82.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner92.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner81.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner85.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner102.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner72.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner91.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner90.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner80.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner82.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner101.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner99.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner78.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner79.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner73.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner118.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner86.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner94.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner86.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner105.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner93.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner87.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner114.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner93.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner119.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner112.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner107.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner80.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner95.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner73.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner99.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner100.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner81.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner79.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner105.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner77.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner97.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner109.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner118.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner120.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner88.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner100.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner110.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner89.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner97.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner106.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner116.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner113.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner96.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner84.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner94.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner74.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner75.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner106.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner104.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner88.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner107.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner98.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner111.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner117.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner111.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner114.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner120.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner101.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner95.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner89.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner110.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner83.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner102.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner96.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner76.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner115.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner77.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner109.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner116.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner103.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner104.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner108.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner76.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner84.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner117.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner85.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner91.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner115.publicKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner87.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner119.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner98.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner108.privateKey
+  visible: true
+  learner_created: true
+- name: KeyPair/miner78.privateKey
+  visible: true
+  learner_created: true
+- name: src/blockchain/transaction/Users.java
+  visible: true
+  text: |
+    package blockchain;
+
+    import blockchain.chat.*;
+
+    import java.util.*;
+    import java.util.stream.Collectors;
+
+    public class FacadeChat {
+        Chat chat;
+        static List<String> names = Arrays.asList("Tom", "John", "Bob", "Kate");
+        public static List<MessageDTO> blockDataContainer = new ArrayList<>();
+        public void createMessages(User user) {
+                blockDataContainer.add(Chat.createMessage(user));
+        }
+
+        /*public void createMessages() throws Exception {
+            MessageDTO message = Chat.createMessage(getUsers().get(getRandomNumber(0, 3)));
+            Boolean isMessageVerified = VerifyMessage.verifySignature(
+                    message.getMessageText().getBytes(),
+                    message.getSign(),
+                    message.getUser().getPathToPublicKey()
+            );
+            if(isMessageVerified) {
+                blockDataContainer.add(message);
+            }
+        }*/
+
+        public static List<User> getUsers() {
+            return names.stream().map(n -> User.createUserWithKeys(n)).collect(Collectors.toList());
+        }
+
+        public static int getRandomNumber(int min, int max) {
+            Random random = new Random();
+            return random.nextInt(max - min) + min;
+        }
+    }
+  learner_created: true
+feedback_link: https://hyperskill.org/learn/step/5418#comment
+status: Solved
+feedback:
+  message: Well done! You've finished the project. Select a new project on <a href="https://hyperskill.org/projects">JetBrains
+    Academy</a> to continue learning.
+  time: Wed, 19 Oct 2022 15:30:01 UTC
+record: -1

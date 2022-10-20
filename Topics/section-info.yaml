@@ -1,0 +1,40 @@
+content:
+- LocalDate
+- LocalTime
+- LocalDateTime
+- Inner classes
+- Nested classes
+- Generic methods
+- Input streams
+- Output streams
+- Custom serialization
+- Memento
+- Abstract factory
+- Instant
+- Anonymous classes
+- Default methods
+- Lambda expressions
+- Functional interfaces
+- Threads as objects
+- Custom threads
+- Thread management
+- Executors
+- Command
+- Singleton
+- Standard functional interfaces
+- Optional
+- Function composition
+- Comparator
+- Functional data processing with streams
+- Stream filtering
+- Map and flatMap
+- Reduction methods
+- Collectors
+- Infinite streams
+- Taking elements
+- Streams of primitives
+- Stream pipelines
+- Decorator
+- Facade
+- Currying
+- Debugging techniques
